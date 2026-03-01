@@ -23,6 +23,7 @@ def swin_train(**kwargs):
         "num_mlp": 512,
         "gamma": 2.0,
         "alpha": 0.25,
+        "dice_weight": 0.4,
         "input_shape": [512, 512, 3],
         "input_scale": 255,
         "mask_scale": 255,
@@ -62,7 +63,8 @@ def swin_infer(**kwargs):
         "data": "./demo_data",  # required for test loader fallback
         "bs": 4,                # batch size for test loader
         "input_shape": [512, 512, 3],
-        "visualize": 1,
+        "evaluate": 0,
+        "visualize": 0,
         **kwargs,
     }
     run_infer(SimpleNamespace(**args))

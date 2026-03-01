@@ -2,6 +2,8 @@
 
 import numpy as np
 from PIL import Image
+import tensorflow as tf
+
 
 
 def dummy_loader(model_path):
@@ -17,7 +19,7 @@ def dummy_loader(model_path):
         Weights of the model.
 
     """
-    backbone = keras.models.load_model(model_path, compile=False)
+    backbone = tf.keras.models.load_model(model_path, compile=False)
     W = backbone.get_weights()
     return W
 
