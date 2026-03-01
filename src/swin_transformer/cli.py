@@ -250,6 +250,10 @@ def run_infer(args):
     image_dir = os.path.join(args.data, "images")
     ids = sorted(os.listdir(image_dir))
 
+    print("Image dir:", image_dir)
+    print("Number of files found:", len(ids))
+    print("First 10 files:", ids[:10])
+
     mode = "infer" if not args.evaluate else "test"
 
     test_loader = DynamicDataLoader(
