@@ -53,6 +53,7 @@ class DynamicDataLoader(Sequence):
 
     def __len__(self):
         return len(self.ids) // self.batch_size
+        #return int(np.ceil(len(self.ids) / self.batch_size))
 
     def __getitem__(self, index):
         if index >= len(self):
@@ -83,7 +84,7 @@ class DynamicDataLoader(Sequence):
 
         # ---- If inference-only mode, skip mask ----
         if self.mode == "infer":
-            return image, None, None
+            return image, None
 
         # Otherwise load mask
         mask_path = os.path.join(
@@ -111,33 +112,57 @@ class DynamicDataLoader(Sequence):
     
     def _data_generation(self, batch_ids):
 
-        X = np.empty((len(batch_ids), self.height, self.width, 3),
-                    dtype=self.image_dtype)
+        batch_size = len(batch_ids)
 
-        if self.mode != "infer":
-            y = np.empty((len(batch_ids),
-                        self.height,
-                        self.width,
-                        self.num_classes),
-                        dtype=np.float32)
+        # ---- Allocate image batch ----
+        X = np.empty(
+            (batch_size, self.height, self.width, 3),
+            dtype=self.image_dtype
+        )
 
-            valid = np.empty((len(batch_ids),
-                            self.height,
-                            self.width),
-                            dtype=bool)
+        # ---- TRAIN MODE ----
+        if self.mode in ["train", "val"]:
 
-        for i, ID in enumerate(batch_ids):
+            y = np.empty(
+                (batch_size, self.height, self.width, self.num_classes),
+                dtype=np.float32
+            )
 
-            image, mask, valid_mask = self._load_image(ID)
-
-            X[i] = image
-
-            if self.mode != "infer":
+            for i, ID in enumerate(batch_ids):
+                image, mask, _ = self._load_image(ID)
+                X[i] = image
                 y[i] = mask
-                valid[i] = valid_mask
 
-        if self.mode == "infer":
+            return X, y
+
+
+        # ---- TEST MODE (evaluation) ----
+        elif self.mode == "test":
+
+            y = np.empty(
+                (batch_size, self.height, self.width, self.num_classes),
+                dtype=np.float32
+            )
+
+            valid = np.empty(
+                (batch_size, self.height, self.width),
+                dtype=bool
+            )
+
+            for i, ID in enumerate(batch_ids):
+                image, mask, valid_mask = self._load_image(ID)
+                X[i] = image
+                y[i] = mask
+                valid[i] = valid_mask  # keep as bool for indexing
+
+            return X, y, valid
+
+
+        # ---- INFERENCE MODE ----
+        elif self.mode == "infer":
+
+            for i, ID in enumerate(batch_ids):
+                image, _ = self._load_image(ID)
+                X[i] = image
+
             return X
-
-        return X, y, valid
-
