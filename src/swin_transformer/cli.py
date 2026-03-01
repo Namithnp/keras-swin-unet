@@ -125,24 +125,29 @@ def run_train(args):
     train_loader = make_loader(train_ids, "train")
     val_loader = make_loader(val_ids, "val")
 
-    # 3. Model
-    model = get_model(
-        input_size=tuple(args.input_shape),
-        filter_num_begin=args.filter,
-        depth=args.depth,
-        stack_num_down=args.stack_down,
-        stack_num_up=args.stack_up,
-        patch_size=tuple(args.patch_size),
-        num_heads=args.num_heads,
-        window_size=args.window_size,
-        num_mlp=args.num_mlp,
-        num_classes=args.num_classes,
-    )
-    model.compile(
-        optimizer=keras.optimizers.Adam(1e-4, clipvalue=0.5),
-        loss=focal_dice_loss(alpha=args.alpha, gamma=args.gamma, dice_weight=args.dice_weight),
-        metrics=["accuracy"]
-    )
+    strategy = tf.distribute.MirroredStrategy() #Multi GPU Strategy
+    print("Number of devices:", strategy.num_replicas_in_sync)
+
+    with strategy.scope():
+
+        # 3. Model
+        model = get_model(
+            input_size=tuple(args.input_shape),
+            filter_num_begin=args.filter,
+            depth=args.depth,
+            stack_num_down=args.stack_down,
+            stack_num_up=args.stack_up,
+            patch_size=tuple(args.patch_size),
+            num_heads=args.num_heads,
+            window_size=args.window_size,
+            num_mlp=args.num_mlp,
+            num_classes=args.num_classes,
+        )
+        model.compile(
+            optimizer=keras.optimizers.Adam(1e-4, clipvalue=0.5),
+            loss=focal_dice_loss(alpha=args.alpha, gamma=args.gamma, dice_weight=args.dice_weight),
+            metrics=["accuracy"]
+        )
 
     os.makedirs(args.model_dir, exist_ok=True)
 
@@ -205,14 +210,18 @@ def run_infer(args):
     matplotlib.use('Agg')  # Ensures no Qt errors in headless environments
     import matplotlib.pyplot as plt
 
+    strategy = tf.distribute.MirroredStrategy()
+    print("Number of devices:", strategy.num_replicas_in_sync)
+
     # Load the model
     custom_objects = {
         **transformer_layers.__dict__,
         **swin_layers.__dict__,
     }
-    model = load_model(
-        os.path.join(args.model_dir, "best_model.keras"), custom_objects=custom_objects, compile=False
-    )
+    with strategy.scope():
+        model = load_model(
+            os.path.join(args.model_dir, "best_model.keras"), custom_objects=custom_objects, compile=False
+        )
 
     # ----------- SINGLE IMAGE MODE ------------
     if args.image:
