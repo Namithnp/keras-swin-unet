@@ -166,7 +166,7 @@ def run_train(args):
         train_loader,
         validation_data=val_loader,
         epochs=args.epochs,
-        callbacks=callbacks,
+        callbacks=callbacks
     )
 
     print("Training complete.")
