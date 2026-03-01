@@ -52,8 +52,8 @@ class DynamicDataLoader(Sequence):
         raise FileNotFoundError(f"No files found in {directory}")
 
     def __len__(self):
-        return len(self.ids) // self.batch_size
-        #return int(np.ceil(len(self.ids) / self.batch_size))
+        #return len(self.ids) // self.batch_size
+        return int(np.ceil(len(self.ids) / self.batch_size))
 
     def __getitem__(self, index):
         if index >= len(self):

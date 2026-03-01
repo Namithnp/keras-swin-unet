@@ -210,18 +210,18 @@ def run_infer(args):
     matplotlib.use('Agg')  # Ensures no Qt errors in headless environments
     import matplotlib.pyplot as plt
 
-    strategy = tf.distribute.MirroredStrategy()
-    print("Number of devices:", strategy.num_replicas_in_sync)
+    #strategy = tf.distribute.MirroredStrategy()
+    #print("Number of devices:", strategy.num_replicas_in_sync)
 
     # Load the model
     custom_objects = {
         **transformer_layers.__dict__,
         **swin_layers.__dict__,
     }
-    with strategy.scope():
-        model = load_model(
-            os.path.join(args.model_dir, "best_model.keras"), custom_objects=custom_objects, compile=False
-        )
+    #with strategy.scope():
+    model = load_model(
+        os.path.join(args.model_dir, "best_model.keras"), custom_objects=custom_objects, compile=False
+    )
 
     # ----------- SINGLE IMAGE MODE ------------
     if args.image:
