@@ -21,7 +21,7 @@ class DynamicDataLoader(Sequence):
     ):
         self.batch_size = batch_size
         self.mode = mode
-
+        self.drop_remainder = (mode in ["train", "val"])
 
         if len(img_size) == 3:
             self.height, self.width, self.channels = img_size
@@ -52,8 +52,10 @@ class DynamicDataLoader(Sequence):
         raise FileNotFoundError(f"No files found in {directory}")
 
     def __len__(self):
-        return len(self.ids) // self.batch_size
-        #return int(np.ceil(len(self.ids) / self.batch_size))
+        if self.drop_remainder:
+            return len(self.ids) // self.batch_size
+        else:
+            return int(np.ceil(len(self.ids) / self.batch_size))
 
     def __getitem__(self, index):
         if index >= len(self):

@@ -269,10 +269,13 @@ def run_infer(args):
         #mask_scale=args.mask_scale,
     )
 
-    y_true_all, y_pred_all = [], []
     k = 0  # Visualization counter
-    
+
     print("Total batches:", len(test_loader))
+
+    num_classes = args.num_classes
+    conf_matrix = np.zeros((num_classes, num_classes), dtype=np.int64)
+
     for batch in test_loader:
 
         if args.evaluate:
@@ -294,8 +297,18 @@ def run_infer(args):
                 true_mask = np.argmax(y_batch[i], axis=-1)
 
                 # Remove ignored pixels from metrics
-                y_true_all.extend(true_mask[valid_mask].flatten())
-                y_pred_all.extend(pred_mask[valid_mask].flatten())
+                valid_pixels = valid_mask
+
+                true_flat = true_mask[valid_pixels].flatten()
+                pred_flat = pred_mask[valid_pixels].flatten()
+
+                cm = confusion_matrix(
+                    true_flat,
+                    pred_flat,
+                    labels=list(range(num_classes))
+                )
+
+                conf_matrix += cm
             else:
                 true_mask = None
                 valid_mask = None
@@ -312,57 +325,41 @@ def run_infer(args):
 
         #if args.visualize and k >= args.visualize:
             #break
-                    
     if args.evaluate:
-        # Calculate metrics on the entire test set
-        accuracy = accuracy_score(y_true_all, y_pred_all)
-        f1 = f1_score(y_true_all, y_pred_all, average="macro")
-        precision = precision_score(y_true_all, y_pred_all, average="macro")
-        recall = recall_score(y_true_all, y_pred_all, average="macro")
- 
-        precision_per_class = precision_score(
-            y_true_all,
-            y_pred_all,
-            average=None,
-            labels=list(range(args.num_classes))
+
+        TP = np.diag(conf_matrix)
+        FP = conf_matrix.sum(axis=0) - TP
+        FN = conf_matrix.sum(axis=1) - TP
+        TN = conf_matrix.sum() - (TP + FP + FN)
+
+        precision_per_class = TP / (TP + FP + 1e-7)
+        recall_per_class    = TP / (TP + FN + 1e-7)
+        iou_per_class       = TP / (TP + FP + FN + 1e-7)
+
+        f1_per_class = 2 * precision_per_class * recall_per_class / (
+            precision_per_class + recall_per_class + 1e-7
         )
 
-        recall_per_class = recall_score(
-            y_true_all,
-            y_pred_all,
-            average=None,
-            labels=list(range(args.num_classes))
-        )
+        accuracy = TP.sum() / conf_matrix.sum()
 
-        conf_matrix = confusion_matrix(y_true_all, y_pred_all, labels=list(range(args.num_classes)))
+        mean_precision = np.mean(precision_per_class)
+        mean_recall    = np.mean(recall_per_class)
+        mean_iou       = np.mean(iou_per_class)
+        mean_f1        = np.mean(f1_per_class)
 
-        iou = compute_iou(
-            np.array(y_true_all),
-            np.array(y_pred_all),
-            args.num_classes
-        )
-
-        f1_per_class = f1_score(
-            y_true_all,
-            y_pred_all,
-            average=None,              # IMPORTANT
-            labels=list(range(args.num_classes))
-        )
-        # Create metrics dictionary
         metrics = {
             "Accuracy": float(accuracy),
-            "Precision": float(precision),
+            "Precision": float(mean_precision),
             "Precision per-class": precision_per_class.tolist(),
-            "Recall": float(recall),
+            "Recall": float(mean_recall),
             "Recall per-class": recall_per_class.tolist(),
-            "Confusion Matrix": conf_matrix.tolist(),  # Save confusion matrix explicitly
-            "IoU per-class": [float(x) for x in iou],
-            "Mean IoU": float(np.mean(iou)),
-            "F1": float(f1),
+            "Confusion Matrix": conf_matrix.tolist(),
+            "IoU per-class": iou_per_class.tolist(),
+            "Mean IoU": float(mean_iou),
+            "F1": float(mean_f1),
             "F1 per-class": f1_per_class.tolist()
         }
 
-        # Save metrics to JSON
         with open("model_evaluation_metrics.json", "w") as f:
             json.dump(metrics, f, indent=2)
 
