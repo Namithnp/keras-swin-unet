@@ -309,8 +309,8 @@ def run_infer(args):
                     valid_mask
                 )
 
-        if args.visualize and k >= args.visualize:
-            break
+        #if args.visualize and k >= args.visualize:
+            #break
                     
     if args.evaluate:
         # Calculate metrics on the entire test set
@@ -414,7 +414,7 @@ def main():
     i.add_argument("--alpha", type=float, default=2.0)
     i.add_argument("--input-scale", type=int, default=255)
     i.add_argument("--data", default="./data", help="Dataset folder path for test loader")
-    i.add_argument("--bs", type=int, default=32)
+    i.add_argument("--bs", type=int, default=1)
     i.add_argument("--input-shape", type=int, nargs=3, default=[512, 512, 3])
     i.add_argument("--evaluate", type=int, default=0, help="1 to compute metrics")    
     i.add_argument("--visualize", type=int, default=0, help="How many images to visualize")
