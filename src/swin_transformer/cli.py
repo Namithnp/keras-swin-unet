@@ -271,7 +271,8 @@ def run_infer(args):
 
     y_true_all, y_pred_all = [], []
     k = 0  # Visualization counter
-
+    
+    print("Total batches:", len(test_loader))
     for batch in test_loader:
 
         if args.evaluate:
