@@ -1,11 +1,30 @@
 import tensorflow as tf
 from tensorflow.keras import backend as K
 
+'''
+alpha = [
+    0.034,   # Background
+    0.083,   # Building
+    0.280,   # Road
+    0.269,   # Utilities (capped)
+    0.334    # WaterBodies
+]
+
+dice_class_weights = [
+    0.088,   # Background
+    0.139,   # Building
+    0.254,   # Road
+    0.242,   # Utilities
+    0.277    # WaterBodies
+]
+'''
 
 # -------------------------------------------------------
 # 1️⃣ CATEGORICAL FOCAL LOSS (Multiclass, Softmax)
 # -------------------------------------------------------
-def categorical_focal_loss(alpha=0.25, gamma=2.0):
+def categorical_focal_loss(alpha, gamma=1.5):
+
+    alpha = tf.constant(alpha, dtype=tf.float32)
 
     def loss(y_true, y_pred):
         epsilon = K.epsilon()
@@ -17,7 +36,8 @@ def categorical_focal_loss(alpha=0.25, gamma=2.0):
         cross_entropy = -y_true * tf.math.log(y_pred)
 
         # Focal factor
-        focal_factor = alpha * tf.pow(1 - y_pred, gamma)
+        alpha_factor = y_true * alpha
+        focal_factor = alpha_factor * tf.pow(1 - y_pred, gamma)
 
         # Apply focal weighting
         loss = focal_factor * cross_entropy
@@ -33,7 +53,9 @@ def categorical_focal_loss(alpha=0.25, gamma=2.0):
 # -------------------------------------------------------
 # 2️⃣ MULTICLASS SOFT DICE LOSS
 # -------------------------------------------------------
-def dice_loss(smooth=1e-6):
+def dice_loss(dice_class_weights, smooth=1e-6):
+
+    class_weights = tf.constant(dice_class_weights, dtype=tf.float32)
 
     def loss(y_true, y_pred):
 
@@ -54,7 +76,8 @@ def dice_loss(smooth=1e-6):
 
         dice = (2. * intersection + smooth) / (denominator + smooth)
 
-        dice = tf.reduce_mean(dice, axis=-1)
+        dice = dice * class_weights
+        dice = tf.reduce_sum(dice, axis=-1)
 
         return 1 - tf.reduce_mean(dice)
 
@@ -64,10 +87,10 @@ def dice_loss(smooth=1e-6):
 # -------------------------------------------------------
 # 3️⃣ COMBINED LOSS
 # -------------------------------------------------------
-def focal_dice_loss(alpha=0.25, gamma=2.0, dice_weight=0.4):
+def focal_dice_loss(alpha, gamma=1.5, dice_weight=0.6, dice_class_weights=None):
 
     focal = categorical_focal_loss(alpha=alpha, gamma=gamma)
-    dice = dice_loss()
+    dice = dice_loss(dice_class_weights=dice_class_weights)
 
     def loss(y_true, y_pred):
         return (1 - dice_weight) * focal(y_true, y_pred) + \

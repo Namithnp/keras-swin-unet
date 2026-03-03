@@ -26,16 +26,25 @@ import rasterio
 from rasterio.enums import Resampling
 
 
-def compute_iou(y_true, y_pred, num_classes):
+import tensorflow as tf
 
-    iou_per_class = []
+class MeanIoUMetric(tf.keras.metrics.Metric):
+    def __init__(self, num_classes=5, name="mean_iou", **kwargs):
+        super().__init__(name=name, **kwargs)
+        self.num_classes = num_classes
+        self.miou = tf.keras.metrics.MeanIoU(num_classes=num_classes)
 
-    for cls in range(num_classes):
-        inter = np.sum((y_true == cls) & (y_pred == cls))
-        union = np.sum((y_true == cls) | (y_pred == cls))
-        iou_per_class.append(inter / union if union else 0)
+    def update_state(self, y_true, y_pred, sample_weight=None):
+        # Convert one-hot to integer labels
+        y_true = tf.argmax(y_true, axis=-1)
+        y_pred = tf.argmax(y_pred, axis=-1)
+        self.miou.update_state(y_true, y_pred)
 
-    return iou_per_class
+    def result(self):
+        return self.miou.result()
+
+    def reset_states(self):
+        self.miou.reset_states()
 
 def decode_mask(mask):
     colors = np.array([
@@ -100,14 +109,47 @@ def visualize_comparison(k, img, pred_mask,
     return k + 1
 
 
+def plot_loss_curves(history, save_path=None):
+    plt.figure(figsize=(8,6))
+
+    plt.plot(history.history['loss'], label='Training Loss')
+    plt.plot(history.history['val_loss'], label='Validation Loss')
+
+    plt.xlabel('Epoch')
+    plt.ylabel('Loss')
+    plt.title('Model Loss')
+    plt.legend()
+    plt.grid(True)
+
+    if save_path:
+        plt.savefig(save_path, dpi=300)
+
+    plt.show()
+
+def plot_iou_curves(history, save_path=None):
+    plt.figure(figsize=(8,6))
+
+    plt.plot(history.history['mean_iou'], label='Training Mean IoU')
+    plt.plot(history.history['val_mean_iou'], label='Validation Mean IoU')
+
+    plt.xlabel('Epoch')
+    plt.ylabel('Mean IoU')
+    plt.title('Mean IoU')
+    plt.legend()
+    plt.grid(True)
+
+    if save_path:
+        plt.savefig(save_path, dpi=300)
+
+    plt.show()
+
 def run_train(args):
-    # 1. Split
+
     ids = os.listdir(os.path.join(args.data, "images"))
     train_ids, val_ids = split_dataset(
         ids, train_frac=0.8, val_frac=0.2, seed=42
     )
 
-    # 2. DataLoaders
     def make_loader(ids, mode):
         return DynamicDataLoader(
             data_dir=args.data,
@@ -125,53 +167,93 @@ def run_train(args):
     train_loader = make_loader(train_ids, "train")
     val_loader = make_loader(val_ids, "val")
 
+    os.makedirs(args.model_dir, exist_ok=True)
+
+    best_ckpt_path = os.path.join(args.model_dir, "best_model.keras")
+    last_ckpt_path = os.path.join(args.model_dir, "last_model.keras")
+
     strategy = tf.distribute.MirroredStrategy() #Multi GPU Strategy
     print("Number of devices:", strategy.num_replicas_in_sync)
 
     with strategy.scope():
 
-        # 3. Model
-        model = get_model(
-            input_size=tuple(args.input_shape),
-            filter_num_begin=args.filter,
-            depth=args.depth,
-            stack_num_down=args.stack_down,
-            stack_num_up=args.stack_up,
-            patch_size=tuple(args.patch_size),
-            num_heads=args.num_heads,
-            window_size=args.window_size,
-            num_mlp=args.num_mlp,
-            num_classes=args.num_classes,
-        )
-        model.compile(
-            optimizer=keras.optimizers.Adam(1e-4, clipvalue=0.5),
-            loss=focal_dice_loss(alpha=args.alpha, gamma=args.gamma, dice_weight=args.dice_weight),
-            metrics=["accuracy"]
-        )
+        # Resume if checkpoint exists
+        if os.path.exists(last_ckpt_path):
+            print("Loading last checkpoint to resume training...")
+            model = keras.models.load_model(
+                last_ckpt_path,
+                custom_objects={
+                    "MeanIoUMetric": MeanIoUMetric,
+                    "loss": focal_dice_loss(
+                        alpha=args.alpha,
+                        gamma=args.gamma,
+                        dice_weight=args.dice_weight,
+                        dice_class_weights=args.dice_class_weights
+                    )
+                }
+            )
+        else:
+            print("Starting fresh training run...")
+            model = get_model(
+                input_size=tuple(args.input_shape),
+                filter_num_begin=args.filter,
+                depth=args.depth,
+                stack_num_down=args.stack_down,
+                stack_num_up=args.stack_up,
+                patch_size=tuple(args.patch_size),
+                num_heads=args.num_heads,
+                window_size=args.window_size,
+                num_mlp=args.num_mlp,
+                num_classes=args.num_classes,
+            )
 
-    os.makedirs(args.model_dir, exist_ok=True)
+            model.compile(
+                    optimizer=keras.optimizers.Adam(1e-4, clipvalue=0.5),
+                    loss=focal_dice_loss(
+                        alpha=args.alpha,
+                        gamma=args.gamma,
+                        dice_weight=args.dice_weight,
+                        dice_class_weights=args.dice_class_weights
+                    ),
+                    metrics=["accuracy", MeanIoUMetric(num_classes=args.num_classes)]
+                )
 
     callbacks = [
         keras.callbacks.EarlyStopping(
-            "val_loss", patience=args.patience, restore_best_weights=True
+            monitor="val_mean_iou",
+            mode="max",
+            patience=args.patience,
+            restore_best_weights=True
         ),
+        # Save best model (highest val IoU)
         keras.callbacks.ModelCheckpoint(
-            os.path.join(args.model_dir, "best_model.keras"),
-            "val_loss",
+            best_ckpt_path,
+            monitor="val_mean_iou",
             save_best_only=True,
+            mode="max"
+        ),
+        # Save last epoch model (for true resume)
+        keras.callbacks.ModelCheckpoint(
+            last_ckpt_path,
+            save_best_only=False
         ),
     ]
 
-    model.fit(
+    history = model.fit(
         train_loader,
         validation_data=val_loader,
         epochs=args.epochs,
-        callbacks=callbacks
+        callbacks=callbacks,
+        #mode="max"
     )
+
+    plot_loss_curves(history, save_path=os.path.join(args.model_dir, "loss_curve.png"))
+    plot_iou_curves(history, save_path=os.path.join(args.model_dir, "iou_curve.png"))
+    print("Saved loss curve and mean IoU curve")
+
 
     print("Training complete.")
     
-    # 4. Evaluate + visualize
     '''
     y_true, y_logits = [], []
     if args.visualize:
@@ -389,8 +471,8 @@ def main():
     t.add_argument("--window-size", type=int, nargs=4, default=[4, 2, 2, 2])
     t.add_argument("--num-mlp", type=int, default=512)
     t.add_argument("--gamma", type=float, required=True)
-    t.add_argument("--alpha", type=float, required=True)
-    t.add_argument("--dice_weight", type=float, default=0.4)
+    t.add_argument("--alpha", type=float, nargs="+", required=True,  help="Class-wise alpha weights")
+    t.add_argument("--dice_class_weights", type=float, nargs="+", default=None, help="Class-wise Dice weights")
     t.add_argument("--input-shape", type=int, nargs=3, default=[512, 512, 3])
     t.add_argument("--input-scale", type=int, default=255)
     t.add_argument("--mask-scale", type=int, default=255)
