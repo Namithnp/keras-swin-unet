@@ -18,6 +18,7 @@ class DynamicDataLoader(Sequence):
         num_classes=None,
         input_scale=255,
         mask_scale=1,
+        dsm_scale=255
     ):
         self.batch_size = batch_size
         self.mode = mode
@@ -25,31 +26,23 @@ class DynamicDataLoader(Sequence):
 
         if len(img_size) == 3:
             self.height, self.width, self.channels = img_size
-        else:
-            raise ValueError("img_size must be (H, W, C)")
         
         self.img_size = (self.height, self.width)
 
         self.image_dir = os.path.join(data_dir, "images")
         self.mask_dir = os.path.join(data_dir, "masks")
+        self.dsm_dir = os.path.join(data_dir, "normalized_DSM")
         self.ids = ids
         self.image_dtype = image_dtype
         self.mask_dtype = mask_dtype
         self.num_classes = num_classes
         self.input_scale = input_scale
         self.mask_scale = mask_scale
+        self.dsm_scale = dsm_scale
 
-        self.image_ext = self._determine_extension(self.image_dir)
-
-        if self.mode != "infer":
-            self.mask_ext = self._determine_extension(self.mask_dir)
-        else:
-            self.mask_ext = None
-
-    def _determine_extension(self, directory):
-        for filename in os.listdir(directory):
-            return os.path.splitext(filename)[1]
-        raise FileNotFoundError(f"No files found in {directory}")
+        self.image_ext = ".tif" 
+        self.dsm_ext = ".jpg"
+        self.mask_ext = ".tif" if mode != "infer" else None
 
     def __len__(self):
         if self.drop_remainder:
@@ -73,16 +66,37 @@ class DynamicDataLoader(Sequence):
         return self._data_generation(batch_ids)
 
     def _load_image(self, image_id):
+        """
+        Loads RGB from .tif and DSM from .jpg, then stacks them.
+        """
 
         image_path = os.path.join(self.image_dir, image_id)
 
         with rasterio.open(image_path) as src:
             image = src.read(
+                [1, 2, 3],
                 out_shape=(3, self.height, self.width),
                 resampling=Resampling.bilinear
             ).transpose(1, 2, 0)
 
         image = image.astype(self.image_dtype) / self.input_scale
+
+        # Swap .tif for .jpg
+        dsm_id = image_id.replace(self.image_ext, self.dsm_ext)
+        dsm_path = os.path.join(self.dsm_dir, dsm_id)
+
+        with rasterio.open(dsm_path) as src:
+            dsm = src.read(
+                1, 
+                out_shape=(self.height, self.width),
+                resampling=Resampling.bilinear
+            )
+        
+        # Add channel dim and normalize
+        dsm = dsm.astype(self.image_dtype)[..., np.newaxis] / self.dsm_scale
+
+        # 3. Stack into 4-channel input (H, W, 4)
+        combined_image = np.concatenate([image, dsm], axis=-1)
 
         # ---- If inference-only mode, skip mask ----
         if self.mode == "infer":

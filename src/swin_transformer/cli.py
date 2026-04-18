@@ -48,11 +48,12 @@ class MeanIoUMetric(tf.keras.metrics.Metric):
 
 def decode_mask(mask):
     colors = np.array([
-        [255, 255, 0],        # Background - yellow
-        [255, 0, 0],      # Building - red
-        [0, 255, 0],      # Road - green
-        [255, 165, 0],          # Utilities - orange
-        [0, 0, 255],    # Water - blue
+        [255, 255, 255],        # Impervious surfaces - White
+        [0, 0, 255],      # Building - Blue
+        [0, 255, 255],      # Low Vegetation - Cyan
+        [0, 255, 0],          # Tree - Gree
+        [255, 255, 0],    # Car - Yellow
+        [255, 0, 0],      # Background - Red
     ])
 
     return colors[mask]
@@ -72,9 +73,11 @@ def visualize_comparison(k, img, pred_mask,
 
     plt.figure(figsize=(12, 6))
 
+    display_img = img[..., :3]
+
     # ---- Original ----
     plt.subplot(1, 3, 1)
-    plt.imshow(img)
+    plt.imshow(display_img)
     plt.title("Original")
     plt.axis("off")
 
@@ -83,7 +86,7 @@ def visualize_comparison(k, img, pred_mask,
     colored_pred[masked_pred == -1] = 0
 
     plt.subplot(1, 3, 2)
-    plt.imshow(img)
+    plt.imshow(display_img)
     plt.imshow(colored_pred, alpha=0.5)
     plt.title("Prediction")
     plt.axis("off")
@@ -97,7 +100,7 @@ def visualize_comparison(k, img, pred_mask,
         colored_gt[masked_gt == -1] = 0
 
         plt.subplot(1, 3, 3)
-        plt.imshow(img)
+        plt.imshow(display_img)
         plt.imshow(colored_gt, alpha=0.5)
         plt.title("Ground Truth")
         plt.axis("off")
@@ -305,10 +308,12 @@ def run_infer(args):
         os.path.join(args.model_dir, "best_model.keras"), custom_objects=custom_objects, compile=False
     )
 
+    '''
     # ----------- SINGLE IMAGE MODE ------------
     if args.image:
         with rasterio.open(args.image) as src:
             img = src.read(
+            [1, 2, 3],
             out_shape=(3, args.input_shape[0], args.input_shape[1]),
             resampling=Resampling.bilinear
                 ).transpose(1, 2, 0)
@@ -326,7 +331,7 @@ def run_infer(args):
                 valid_mask=None,
             )
         return
-
+    '''
     # ----------- TEST LOADER MODE ------------
     print("Running inference on test dataset...")
     image_dir = os.path.join(args.data, "images")
@@ -348,7 +353,7 @@ def run_infer(args):
         mask_dtype=np.int32,
         num_classes=args.num_classes,
         input_scale=args.input_scale,
-        #mask_scale=args.mask_scale,
+        dsm_scale=args.dsm_scale,
     )
 
     k = 0  # Visualization counter
@@ -445,7 +450,7 @@ def run_infer(args):
         with open("model_evaluation_metrics.json", "w") as f:
             json.dump(metrics, f, indent=2)
 
-        print("✅ Inference Completed. Metrics saved to model_evaluation_metrics.json")
+        print("Inference Completed. Metrics saved to model_evaluation_metrics.json")
 
 
 def main():
@@ -476,6 +481,8 @@ def main():
     t.add_argument("--input-shape", type=int, nargs=3, default=[512, 512, 3])
     t.add_argument("--input-scale", type=int, default=255)
     t.add_argument("--mask-scale", type=int, default=255)
+    t.add_argument("--dsm-dir", type=str, default="normalized_DSM") # Added
+    t.add_argument("--dsm-scale", type=float, default=255.0)
     t.add_argument(
         "--visualize",
         type=int,
@@ -498,6 +505,8 @@ def main():
     i.add_argument("--input-shape", type=int, nargs=3, default=[512, 512, 3])
     i.add_argument("--evaluate", type=int, default=0, help="1 to compute metrics")    
     i.add_argument("--visualize", type=int, default=0, help="How many images to visualize")
+    i.add_argument("--dsm-dir", type=str, default="normalized_DSM") # Added
+    i.add_argument("--dsm-scale", type=float, default=255.0)
     i.set_defaults(func=run_infer)
 
 

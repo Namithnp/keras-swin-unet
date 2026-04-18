@@ -25,10 +25,12 @@ def swin_train(**kwargs):
         "alpha": None,
         "dice_class_weights": None,
         "dice_weight": 0.6,
-        "input_shape": [512, 512, 3],
+        "input_shape": [512, 512, 4],
         "input_scale": 255,
         "mask_scale": 255,
         "visualize": 2,
+        "dsm_dir": None,
+        "dsm_scale": 255,
         **kwargs,  # override defaults
     }
     run_train(SimpleNamespace(**args))
@@ -66,6 +68,7 @@ def swin_infer(**kwargs):
         "input_shape": [512, 512, 3],
         "evaluate": 0,
         "visualize": 0,
+        "dsm_scale": 255,
         **kwargs,
     }
     run_infer(SimpleNamespace(**args))
