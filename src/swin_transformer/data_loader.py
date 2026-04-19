@@ -41,7 +41,7 @@ class DynamicDataLoader(Sequence):
         self.dsm_scale = dsm_scale
 
         self.image_ext = ".tif" 
-        self.dsm_ext = ".jpg"
+        self.dsm_ext = ".tif"
         self.mask_ext = ".tif" if mode != "infer" else None
 
     def __len__(self):
@@ -67,7 +67,7 @@ class DynamicDataLoader(Sequence):
 
     def _load_image(self, image_id):
         """
-        Loads RGB from .tif and DSM from .jpg, then stacks them.
+        Loads RGB and DSM from .tif, then stacks them.
         """
 
         image_path = os.path.join(self.image_dir, image_id)
@@ -100,7 +100,7 @@ class DynamicDataLoader(Sequence):
 
         # ---- If inference-only mode, skip mask ----
         if self.mode == "infer":
-            return image, None
+            return combined_image, None
 
         # Otherwise load mask
         mask_path = os.path.join(
@@ -124,7 +124,7 @@ class DynamicDataLoader(Sequence):
         mask_onehot = to_categorical(safe_mask, num_classes=self.num_classes)
         mask_onehot[~valid_mask] = 0
 
-        return image, mask_onehot, valid_mask
+        return combined_image, mask_onehot, valid_mask
     
     def _data_generation(self, batch_ids):
 
@@ -132,7 +132,7 @@ class DynamicDataLoader(Sequence):
 
         # ---- Allocate image batch ----
         X = np.empty(
-            (batch_size, self.height, self.width, 3),
+            (batch_size, self.height, self.width, self.channels),
             dtype=self.image_dtype
         )
 
