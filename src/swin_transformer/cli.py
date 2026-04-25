@@ -29,7 +29,7 @@ from rasterio.enums import Resampling
 import tensorflow as tf
 
 class MeanIoUMetric(tf.keras.metrics.Metric):
-    def __init__(self, num_classes=5, name="mean_iou", **kwargs):
+    def __init__(self, num_classes, name="mean_iou", **kwargs):
         super().__init__(name=name, **kwargs)
         self.num_classes = num_classes
         self.miou = tf.keras.metrics.MeanIoU(num_classes=num_classes)
@@ -46,22 +46,34 @@ class MeanIoUMetric(tf.keras.metrics.Metric):
     def reset_states(self):
         self.miou.reset_states()
 
-def decode_mask(mask):
-    colors = np.array([
-        [255, 255, 255],        # Impervious surfaces - White
-        [0, 0, 255],      # Building - Blue
-        [0, 255, 255],      # Low Vegetation - Cyan
-        [0, 255, 0],          # Tree - Gree
-        [255, 255, 0],    # Car - Yellow
-        [255, 0, 0],      # Background - Red
-    ])
+def decode_mask(mask, num_classes):
+    """
+    Dynamically applies the correct color palette based on the number of classes.
+    """
+    if num_classes == 2:
+        # Binary Aerial Dataset Palette
+        colors = np.array([
+            [0, 0, 0],          # 0: Background - Black
+            [255, 255, 255],    # 1: Building - White
+        ])
+    else:
+        # Multiclass Potsdam Dataset Palette (6 Classes)
+        colors = np.array([
+            [255, 255, 255],    # 0: Impervious surfaces - White
+            [0, 0, 255],        # 1: Building - Blue
+            [0, 255, 255],      # 2: Low Vegetation - Cyan
+            [0, 255, 0],        # 3: Tree - Green
+            [255, 255, 0],      # 4: Car - Yellow
+            [255, 0, 0],        # 5: Background - Red
+        ])
 
     return colors[mask]
 
 
 def visualize_comparison(k, img, pred_mask,
                          true_mask=None,
-                         valid_mask=None):
+                         valid_mask=None,
+                         num_classes=2):
 
     # If no GT valid_mask (pure inference),
     # detect padding from black image region
@@ -82,7 +94,7 @@ def visualize_comparison(k, img, pred_mask,
     plt.axis("off")
 
     # ---- Prediction ----
-    colored_pred = decode_mask(np.clip(masked_pred, 0, None))
+    colored_pred = decode_mask(np.clip(masked_pred, 0, None), num_classes)
     colored_pred[masked_pred == -1] = 0
 
     plt.subplot(1, 3, 2)
@@ -96,7 +108,7 @@ def visualize_comparison(k, img, pred_mask,
         masked_gt = true_mask.copy()
         masked_gt[~valid_mask] = -1
 
-        colored_gt = decode_mask(np.clip(masked_gt, 0, None))
+        colored_gt = decode_mask(np.clip(masked_gt, 0, None), num_classes)
         colored_gt[masked_gt == -1] = 0
 
         plt.subplot(1, 3, 3)
@@ -407,7 +419,8 @@ def run_infer(args):
                     img,
                     pred_mask,
                     true_mask,
-                    valid_mask
+                    valid_mask,
+                    num_classes=num_classes
                 )
 
         #if args.visualize and k >= args.visualize:

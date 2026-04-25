@@ -11,14 +11,15 @@ class DynamicDataLoader(Sequence):
         data_dir,
         ids,
         batch_size=2,
-        img_size=(256, 256),
+        img_size=(256, 256, 3), # Defaulted to 3 channels for Aerial dataset
         mode="train",
         image_dtype=np.float32,
         mask_dtype=np.int32,
         num_classes=None,
         input_scale=255,
         mask_scale=1,
-        dsm_scale=255
+        dsm_scale=255,
+        dsm_dir="normalized_DSM"
     ):
         self.batch_size = batch_size
         self.mode = mode
@@ -26,12 +27,14 @@ class DynamicDataLoader(Sequence):
 
         if len(img_size) == 3:
             self.height, self.width, self.channels = img_size
+        else:
+            raise ValueError("img_size must be (H, W, C)")
         
         self.img_size = (self.height, self.width)
 
         self.image_dir = os.path.join(data_dir, "images")
         self.mask_dir = os.path.join(data_dir, "masks")
-        self.dsm_dir = os.path.join(data_dir, "normalized_DSM")
+        self.dsm_dir = os.path.join(data_dir, dsm_dir) # Passed parameter
         self.ids = ids
         self.image_dtype = image_dtype
         self.mask_dtype = mask_dtype
@@ -67,7 +70,7 @@ class DynamicDataLoader(Sequence):
 
     def _load_image(self, image_id):
         """
-        Loads RGB and DSM from .tif, then stacks them.
+        Loads RGB. If channels == 4, also loads and stacks DSM.
         """
 
         image_path = os.path.join(self.image_dir, image_id)
@@ -81,26 +84,30 @@ class DynamicDataLoader(Sequence):
 
         image = image.astype(self.image_dtype) / self.input_scale
 
-        # Swap .tif for .jpg
-        dsm_id = image_id.replace(self.image_ext, self.dsm_ext)
-        dsm_path = os.path.join(self.dsm_dir, dsm_id)
+        # ---- Conditional DSM Loading ----
+        if self.channels == 4:
+            dsm_id = image_id.replace(self.image_ext, self.dsm_ext)
+            dsm_path = os.path.join(self.dsm_dir, dsm_id)
 
-        with rasterio.open(dsm_path) as src:
-            dsm = src.read(
-                1, 
-                out_shape=(self.height, self.width),
-                resampling=Resampling.bilinear
-            )
-        
-        # Add channel dim and normalize
-        dsm = dsm.astype(self.image_dtype)[..., np.newaxis] / self.dsm_scale
+            with rasterio.open(dsm_path) as src:
+                dsm = src.read(
+                    1, 
+                    out_shape=(self.height, self.width),
+                    resampling=Resampling.bilinear
+                )
+            
+            # Add channel dim and normalize
+            dsm = dsm.astype(self.image_dtype)[..., np.newaxis] / self.dsm_scale
 
-        # 3. Stack into 4-channel input (H, W, 4)
-        combined_image = np.concatenate([image, dsm], axis=-1)
+            # Stack into 4-channel input (H, W, 4)
+            final_image = np.concatenate([image, dsm], axis=-1)
+        else:
+            # Keep as 3-channel RGB
+            final_image = image
 
         # ---- If inference-only mode, skip mask ----
         if self.mode == "infer":
-            return combined_image, None
+            return final_image, None
 
         # Otherwise load mask
         mask_path = os.path.join(
@@ -124,7 +131,7 @@ class DynamicDataLoader(Sequence):
         mask_onehot = to_categorical(safe_mask, num_classes=self.num_classes)
         mask_onehot[~valid_mask] = 0
 
-        return combined_image, mask_onehot, valid_mask
+        return final_image, mask_onehot, valid_mask
     
     def _data_generation(self, batch_ids):
 
@@ -145,8 +152,8 @@ class DynamicDataLoader(Sequence):
             )
 
             for i, ID in enumerate(batch_ids):
-                image, mask, _ = self._load_image(ID)
-                X[i] = image
+                img, mask, _ = self._load_image(ID)
+                X[i] = img
                 y[i] = mask
 
             return X, y
@@ -166,8 +173,8 @@ class DynamicDataLoader(Sequence):
             )
 
             for i, ID in enumerate(batch_ids):
-                image, mask, valid_mask = self._load_image(ID)
-                X[i] = image
+                img, mask, valid_mask = self._load_image(ID)
+                X[i] = img
                 y[i] = mask
                 valid[i] = valid_mask  # keep as bool for indexing
 
@@ -178,7 +185,7 @@ class DynamicDataLoader(Sequence):
         elif self.mode == "infer":
 
             for i, ID in enumerate(batch_ids):
-                image, _ = self._load_image(ID)
-                X[i] = image
+                img, _ = self._load_image(ID)
+                X[i] = img
 
             return X
