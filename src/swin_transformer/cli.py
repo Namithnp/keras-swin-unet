@@ -48,7 +48,7 @@ class MeanIoUMetric(tf.keras.metrics.Metric):
 
 def decode_mask(mask, num_classes):
     """
-    Dynamically applies the correct color palette based on the number of classes.
+    Dynamically applies the correct color palette based on the number of classes (Tailored to my datasets)
     """
     if num_classes == 2:
         # Binary Aerial Dataset Palette
@@ -56,7 +56,17 @@ def decode_mask(mask, num_classes):
             [0, 0, 0],          # 0: Background - Black
             [255, 255, 255],    # 1: Building - White
         ])
-    else:
+    
+    elif num_classes == 4:
+        #Hackathon dataset
+        colors = np.array([
+            [0, 0, 0],     # 0: Background
+            [255, 0, 0],    # 1: Building 
+            [0, 255, 0],     # 2: Road
+            [0, 0, 255],       # 3: Water bodies 
+        ])                 
+
+    else: 
         # Multiclass Potsdam Dataset Palette (6 Classes)
         colors = np.array([
             [255, 255, 255],    # 0: Impervious surfaces - White
