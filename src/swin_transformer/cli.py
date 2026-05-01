@@ -233,7 +233,7 @@ def run_train(args):
             )
 
             model.compile(
-                    optimizer=keras.optimizers.Adam(1e-4, clipvalue=0.5),
+                    optimizer=keras.optimizers.Adam(3e-4, clipvalue=0.5),
                     loss=focal_dice_loss(
                         alpha=args.alpha,
                         gamma=args.gamma,
@@ -247,8 +247,16 @@ def run_train(args):
         keras.callbacks.EarlyStopping(
             monitor="val_mean_iou",
             mode="max",
-            patience=args.patience,
+            patience=args.patience + 10,
             restore_best_weights=True
+        ),
+        keras.callbacks.ReduceLROnPlateau(
+            monitor="val_mean_iou",
+            mode="max",
+            factor=0.2,
+            patience=10,
+            min_lr=1e-7,
+            verbose=1
         ),
         # Save best model (highest val IoU)
         keras.callbacks.ModelCheckpoint(
