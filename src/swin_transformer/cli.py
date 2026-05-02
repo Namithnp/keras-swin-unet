@@ -233,7 +233,7 @@ def run_train(args):
             )
 
             model.compile(
-                    optimizer=keras.optimizers.Adam(3e-4, clipvalue=0.5),
+                    optimizer=keras.optimizers.Adam(2e-4, clipvalue=0.5),
                     loss=focal_dice_loss(
                         alpha=args.alpha,
                         gamma=args.gamma,
@@ -528,7 +528,7 @@ def main():
     i.add_argument("--image", help="Path to single image (optional)")
     i.add_argument("--output", default="out.png")
     i.add_argument("--num-classes", type=int, default=2)
-    i.add_argument("--gamma", type=float, default=0.25)
+    i.add_argument("--gamma", type=float, default=2.5)
     i.add_argument("--alpha", type=float, default=2.0)
     i.add_argument("--input-scale", type=int, default=255)
     i.add_argument("--data", default="./data", help="Dataset folder path for test loader")
