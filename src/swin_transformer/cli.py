@@ -254,7 +254,8 @@ def run_train(args):
             monitor="val_mean_iou",
             mode="max",
             factor=0.2,
-            patience=10,
+            patience=7,
+            min_delta=0.005,
             min_lr=1e-7,
             verbose=1
         ),
